@@ -112,11 +112,15 @@ type OpenMetricsParser struct {
 	visitedMFName           []byte
 	skipSTSeries            bool
 	enableTypeAndUnitLabels bool
+	nameLimit               uint
+	valueLimit              uint
 }
 
 type openMetricsParserOptions struct {
 	skipSTSeries            bool
 	enableTypeAndUnitLabels bool
+	labelNameLengthLimit    uint
+	labelValueLengthLimit   uint
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
@@ -155,6 +159,8 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsO
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		skipSTSeries:            options.skipSTSeries,
 		enableTypeAndUnitLabels: options.enableTypeAndUnitLabels,
+		nameLimit:               options.labelNameLengthLimit,
+		valueLimit:              options.labelValueLengthLimit,
 	}
 
 	return parser
@@ -669,6 +675,9 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 			curTStart++
 			curTI--
 		}
+		if p.nameLimit > 0 && uint(curTI-curTStart) > p.nameLimit {
+			return nil, fmt.Errorf("label name length limit exceeded: %d > %d", curTI-curTStart, p.nameLimit)
+		}
 		offsets = append(offsets, curTStart, curTI)
 
 		if t != tEqual {
@@ -679,6 +688,11 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 		}
 		if !utf8.Valid(p.l.buf()) {
 			return nil, fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
+		}
+
+		valLen := (p.l.i - 1) - (p.l.start + 1)
+		if p.valueLimit > 0 && uint(valLen) > p.valueLimit {
+			return nil, fmt.Errorf("label value length limit exceeded: %d > %d", valLen, p.valueLimit)
 		}
 
 		// The openMetricsLexer ensures the value string is quoted. Strip first

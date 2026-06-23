@@ -305,7 +305,7 @@ func FuzzParseProtobuf(f *testing.F) {
 		if len(in) > maxInputSize {
 			t.Skip()
 		}
-		p := textparse.NewProtobufParser(in, ignoreNative, parseClassic, convertNHCB, typeAndUnit, symbolTable)
+		p := textparse.NewProtobufParser(in, ignoreNative, parseClassic, convertNHCB, typeAndUnit, 0, 0, symbolTable)
 		var err error
 		for {
 			entry, nextErr := p.Next()

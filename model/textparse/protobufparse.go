@@ -80,12 +80,16 @@ type ProtobufParser struct {
 	// We need to preload NHCB since we cannot do error handling in Histogram().
 	nhcbH  *histogram.Histogram
 	nhcbFH *histogram.FloatHistogram
+
+	nameLimit  uint
+	valueLimit uint
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
 func NewProtobufParser(
 	b []byte,
 	ignoreNativeHistograms, parseClassicHistograms, convertClassicHistogramsToNHCB, enableTypeAndUnitLabels bool,
+	nameLimit, valueLimit uint,
 	st *labels.SymbolTable,
 ) Parser {
 	builder := labels.NewScratchBuilderWithSymbolTable(st, 16)
@@ -101,6 +105,8 @@ func NewProtobufParser(
 		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
 		convertClassicHistogramsToNHCB: convertClassicHistogramsToNHCB,
 		tmpNHCB:                        convertnhcb.NewTempHistogram(),
+		nameLimit:                      nameLimit,
+		valueLimit:                     valueLimit,
 	}
 }
 
@@ -617,13 +623,30 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 			Unit: p.dec.GetUnit(),
 		}
 		m.AddToLabels(&p.builder)
-		if err := p.dec.Label(m.NewIgnoreOverriddenMetadataLabelScratchBuilder(&p.builder)); err != nil {
+
+		adder := limitEnforcingAdder{
+			adder:      m.NewIgnoreOverriddenMetadataLabelScratchBuilder(&p.builder),
+			nameLimit:  p.nameLimit,
+			valueLimit: p.valueLimit,
+		}
+		if err := p.dec.Label(&adder); err != nil {
 			return err
+		}
+		if adder.err != nil {
+			return adder.err
 		}
 	} else {
 		p.builder.Add(labels.MetricName, p.getMagicName())
-		if err := p.dec.Label(&p.builder); err != nil {
+		adder := limitEnforcingAdder{
+			adder:      &p.builder,
+			nameLimit:  p.nameLimit,
+			valueLimit: p.valueLimit,
+		}
+		if err := p.dec.Label(&adder); err != nil {
 			return err
+		}
+		if adder.err != nil {
+			return adder.err
 		}
 	}
 
@@ -648,6 +671,32 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 		p.entryBytes.WriteString(l.Value)
 	})
 	return nil
+}
+
+type unsafeLabelAdder interface {
+	Add(name, value string)
+}
+
+type limitEnforcingAdder struct {
+	adder      unsafeLabelAdder
+	nameLimit  uint
+	valueLimit uint
+	err        error
+}
+
+func (a *limitEnforcingAdder) Add(name, value string) {
+	if a.err != nil {
+		return
+	}
+	if a.nameLimit > 0 && uint(len(name)) > a.nameLimit {
+		a.err = fmt.Errorf("label name length limit exceeded: %d > %d", len(name), a.nameLimit)
+		return
+	}
+	if a.valueLimit > 0 && uint(len(value)) > a.valueLimit {
+		a.err = fmt.Errorf("label value length limit exceeded: %d > %d", len(value), a.valueLimit)
+		return
+	}
+	a.adder.Add(name, value)
 }
 
 // getMagicName usually just returns p.mf.GetType() but adds a magic suffix

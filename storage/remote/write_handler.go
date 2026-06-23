@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -38,9 +39,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+var ErrLabelLimitExceeded = errors.New("label length limit exceeded")
+
 type writeHandler struct {
 	logger     *slog.Logger
 	appendable storage.Appendable
+	configFunc func() config.Config
 
 	samplesWithInvalidLabelsTotal  prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
@@ -57,10 +61,11 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool, configFunc func() config.Config) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
+		configFunc: configFunc,
 		samplesWithInvalidLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -119,6 +124,9 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 			case isHistogramValidationError(err):
 				wr.SetStatusCode(http.StatusBadRequest)
 				return wr, err
+			case errors.Is(err, ErrLabelLimitExceeded):
+				wr.SetStatusCode(http.StatusBadRequest)
+				return wr, err
 			default:
 				wr.SetStatusCode(http.StatusInternalServerError)
 				return wr, err
@@ -167,8 +175,36 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 	}()
 
+	var nameLimit, valueLimit uint
+	if h.configFunc != nil {
+		if c := h.configFunc(); c.GlobalConfig.LabelNameLengthLimit > 0 || c.GlobalConfig.LabelValueLengthLimit > 0 {
+			nameLimit = c.GlobalConfig.LabelNameLengthLimit
+			valueLimit = c.GlobalConfig.LabelValueLengthLimit
+		}
+	}
+
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
+		if nameLimit > 0 || valueLimit > 0 {
+			var lengthExceeded bool
+			for _, l := range ts.Labels {
+				if nameLimit > 0 && uint(len(l.Name)) > nameLimit {
+					h.logger.Warn("label name length limit exceeded", "limit", nameLimit, "name_len", len(l.Name))
+					lengthExceeded = true
+					break
+				}
+				if valueLimit > 0 && uint(len(l.Value)) > valueLimit {
+					h.logger.Warn("label value length limit exceeded", "limit", valueLimit, "value_len", len(l.Value))
+					lengthExceeded = true
+					break
+				}
+			}
+			if lengthExceeded {
+				h.samplesWithInvalidLabelsTotal.Add(float64(len(ts.Samples) + len(ts.Histograms)))
+				return ErrLabelLimitExceeded
+			}
+		}
+
 		ls := ts.ToLabels(&b, nil)
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
@@ -311,7 +347,44 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		b = labels.NewScratchBuilder(0)
 	)
+	var nameLimit, valueLimit uint
+	if h.configFunc != nil {
+		if c := h.configFunc(); c.GlobalConfig.LabelNameLengthLimit > 0 || c.GlobalConfig.LabelValueLengthLimit > 0 {
+			nameLimit = c.GlobalConfig.LabelNameLengthLimit
+			valueLimit = c.GlobalConfig.LabelValueLengthLimit
+		}
+	}
+
 	for _, ts := range req.Timeseries {
+		if nameLimit > 0 || valueLimit > 0 {
+			var lengthExceeded bool
+			for i := 0; i < len(ts.LabelsRefs); i += 2 {
+				nameRef := ts.LabelsRefs[i]
+				if nameLimit > 0 && int(nameRef) < len(req.Symbols) {
+					if uint(len(req.Symbols[nameRef])) > nameLimit {
+						h.logger.Warn("label name length limit exceeded", "limit", nameLimit, "name_len", len(req.Symbols[nameRef]))
+						lengthExceeded = true
+						break
+					}
+				}
+
+				if i+1 < len(ts.LabelsRefs) {
+					valueRef := ts.LabelsRefs[i+1]
+					if valueLimit > 0 && int(valueRef) < len(req.Symbols) {
+						if uint(len(req.Symbols[valueRef])) > valueLimit {
+							h.logger.Warn("label value length limit exceeded", "limit", valueLimit, "value_len", len(req.Symbols[valueRef]))
+							lengthExceeded = true
+							break
+						}
+					}
+				}
+			}
+			if lengthExceeded {
+				h.samplesWithInvalidLabelsTotal.Add(float64(len(ts.Samples) + len(ts.Histograms)))
+				return 0, http.StatusBadRequest, ErrLabelLimitExceeded
+			}
+		}
+
 		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))

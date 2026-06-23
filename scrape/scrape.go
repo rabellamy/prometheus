@@ -1603,6 +1603,8 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
 		OpenMetricsSkipSTSeries:                 sl.enableSTZeroIngestion,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
+		LabelNameLengthLimit:                    getLabelNameLengthLimit(sl.labelLimits),
+		LabelValueLengthLimit:                   getLabelValueLengthLimit(sl.labelLimits),
 	})
 	if p == nil {
 		sl.l.Error(
@@ -1894,6 +1896,20 @@ loop:
 		err = sl.updateStaleMarkers(app, defTime)
 	}
 	return total, added, seriesAdded, err
+}
+
+func getLabelNameLengthLimit(l *labelLimits) uint {
+	if l == nil {
+		return 0
+	}
+	return uint(l.labelNameLengthLimit)
+}
+
+func getLabelValueLengthLimit(l *labelLimits) uint {
+	if l == nil {
+		return 0
+	}
+	return uint(l.labelValueLengthLimit)
 }
 
 // TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.

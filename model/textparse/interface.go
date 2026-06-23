@@ -153,6 +153,11 @@ type ParserOptions struct {
 	// FallbackContentType specifies the fallback content type to use when the provided
 	// Content-Type header cannot be parsed or is not supported.
 	FallbackContentType string
+
+	// LabelNameLengthLimit and LabelValueLengthLimit restrict the maximum length of a label name and value.
+	// If set to > 0, the parser will return an error from Next() if the limit is exceeded.
+	LabelNameLengthLimit  uint
+	LabelValueLengthLimit uint
 }
 
 // New returns a new parser of the byte slice.
@@ -177,6 +182,8 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 		baseParser = NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 			o.skipSTSeries = opts.OpenMetricsSkipSTSeries
 			o.enableTypeAndUnitLabels = opts.EnableTypeAndUnitLabels
+			o.labelNameLengthLimit = opts.LabelNameLengthLimit
+			o.labelValueLengthLimit = opts.LabelValueLengthLimit
 		})
 	case "application/vnd.google.protobuf":
 		return NewProtobufParser(
@@ -185,10 +192,12 @@ func New(b []byte, contentType string, st *labels.SymbolTable, opts ParserOption
 			opts.KeepClassicOnClassicAndNativeHistograms,
 			opts.ConvertClassicHistogramsToNHCB,
 			opts.EnableTypeAndUnitLabels,
+			opts.LabelNameLengthLimit,
+			opts.LabelValueLengthLimit,
 			st,
 		), err
 	case "text/plain":
-		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels)
+		baseParser = NewPromParser(b, st, opts.EnableTypeAndUnitLabels, opts.LabelNameLengthLimit, opts.LabelValueLengthLimit)
 	default:
 		return nil, err
 	}

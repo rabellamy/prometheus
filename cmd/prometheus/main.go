@@ -1000,6 +1000,7 @@ func main() {
 		}
 
 		queryEngine = promql.NewEngine(opts)
+		queryEngine.SetLabelLimits(cfgFile.GlobalConfig.LabelNameLengthLimit, cfgFile.GlobalConfig.LabelValueLengthLimit)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme:   cfgFile.GlobalConfig.MetricNameValidationScheme,
@@ -1124,6 +1125,7 @@ func main() {
 					return err
 				}
 				queryEngine.SetQueryLogger(l)
+				queryEngine.SetLabelLimits(cfg.GlobalConfig.LabelNameLengthLimit, cfg.GlobalConfig.LabelValueLengthLimit)
 				return nil
 			},
 		}, {

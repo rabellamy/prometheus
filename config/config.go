@@ -189,6 +189,8 @@ var (
 		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
+		LabelNameLengthLimit:           1048576,
+		LabelValueLengthLimit:          1048576,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -691,6 +693,12 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		// per-job scrape config, we have to recognize the unset case to
 		// correctly set the default depending on the local value of
 		// ScrapeNativeHistograms.
+	}
+	if gc.LabelNameLengthLimit == 0 {
+		gc.LabelNameLengthLimit = DefaultGlobalConfig.LabelNameLengthLimit
+	}
+	if gc.LabelValueLengthLimit == 0 {
+		gc.LabelValueLengthLimit = DefaultGlobalConfig.LabelValueLengthLimit
 	}
 	if gc.ScrapeProtocols != nil {
 		// Only validate if not-nil at this point.

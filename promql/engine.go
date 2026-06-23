@@ -363,6 +363,10 @@ type Engine struct {
 	enableTypeAndUnitLabels  bool
 	useStartTimestamps       bool
 	parser                   parser.Parser
+
+	labelLimitsLock       sync.RWMutex
+	labelNameLengthLimit  uint
+	labelValueLengthLimit uint
 }
 
 // NewEngine returns a new engine.
@@ -515,6 +519,20 @@ func (ng *Engine) Close() error {
 		return ng.activeQueryTracker.Close()
 	}
 	return nil
+}
+
+// SetLabelLimits sets the limits for label name and value lengths.
+func (ng *Engine) SetLabelLimits(nameLimit, valueLimit uint) {
+	ng.labelLimitsLock.Lock()
+	defer ng.labelLimitsLock.Unlock()
+	ng.labelNameLengthLimit = nameLimit
+	ng.labelValueLengthLimit = valueLimit
+}
+
+func (ng *Engine) labelLimits() (uint, uint) {
+	ng.labelLimitsLock.RLock()
+	defer ng.labelLimitsLock.RUnlock()
+	return ng.labelNameLengthLimit, ng.labelValueLengthLimit
 }
 
 // SetQueryLogger sets the query logger.
@@ -801,6 +819,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	// w.r.t. the start time since only 1 evaluation will be done on them.
 	setOffsetForAtModifier(timeMilliseconds(s.Start), s.Expr)
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval, ng.metrics.queryInnerEvalHistogram)
+	nameLimit, valueLimit := ng.labelLimits()
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start.Equal(s.End) && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -817,6 +836,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			useStartTimestamps:       ng.useStartTimestamps,
 			querier:                  querier,
+			labelNameLengthLimit:     nameLimit,
+			labelValueLengthLimit:    valueLimit,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -878,6 +899,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		useStartTimestamps:       ng.useStartTimestamps,
 		querier:                  querier,
+		labelNameLengthLimit:     nameLimit,
+		labelValueLengthLimit:    valueLimit,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1166,6 +1189,9 @@ type evaluator struct {
 	enableTypeAndUnitLabels  bool
 	useStartTimestamps       bool
 	querier                  storage.Querier
+
+	labelNameLengthLimit  uint
+	labelValueLengthLimit uint
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1973,6 +1999,8 @@ func (ev *evaluator) runSubquery(ctx context.Context, e *parser.SubqueryExpr) (p
 		enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 		useStartTimestamps:       ev.useStartTimestamps,
 		querier:                  ev.querier,
+		labelNameLengthLimit:     ev.labelNameLengthLimit,
+		labelValueLengthLimit:    ev.labelValueLengthLimit,
 	}
 
 	if subqStart != ev.startTimestamp {
@@ -2575,6 +2603,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			useStartTimestamps:       ev.useStartTimestamps,
 			querier:                  ev.querier,
+			labelNameLengthLimit:     ev.labelNameLengthLimit,
+			labelValueLengthLimit:    ev.labelValueLengthLimit,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples

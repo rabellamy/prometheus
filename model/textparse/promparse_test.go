@@ -383,7 +383,7 @@ type_and_unit_test2{__type__="counter"} 123`
 				},
 			}
 
-			p := NewPromParser([]byte(input), labels.NewSymbolTable(), typeAndUnitEnabled)
+			p := NewPromParser([]byte(input), labels.NewSymbolTable(), typeAndUnitEnabled, 0, 0)
 			got := testParse(t, p)
 			requireEntries(t, exp, got)
 		})
@@ -460,7 +460,7 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false)
+	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false, 0, 0)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -545,7 +545,7 @@ func TestPromParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false, 0, 0)
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -556,7 +556,7 @@ func TestPromParseErrors(t *testing.T) {
 
 func TestPromParseBareIdentifierInBraces(t *testing.T) {
 	require.NotPanics(t, func() {
-		p := NewPromParser([]byte("{A} 0\n"), labels.NewSymbolTable(), false)
+		p := NewPromParser([]byte("{A} 0\n"), labels.NewSymbolTable(), false, 0, 0)
 		for {
 			et, err := p.Next()
 			if err != nil {
@@ -614,7 +614,7 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false, 0, 0)
 		var err error
 		for err == nil {
 			_, err = p.Next()

@@ -2394,6 +2394,9 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	if !model.UTF8Validation.IsValidLabelName(dst) {
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
+	if ev.labelNameLengthLimit > 0 && uint(len(dst)) > ev.labelNameLengthLimit {
+		panic(fmt.Errorf("label name length limit exceeded: %d > %d", len(dst), ev.labelNameLengthLimit))
+	}
 
 	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
@@ -2404,6 +2407,9 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 		indexes := regex.FindStringSubmatchIndex(srcVal)
 		if indexes != nil { // Only replace when regexp matches.
 			res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+			if ev.labelValueLengthLimit > 0 && uint(len(res)) > ev.labelValueLengthLimit {
+				panic(fmt.Errorf("label value length limit exceeded: %d > %d", len(res), ev.labelValueLengthLimit))
+			}
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
@@ -2444,6 +2450,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	if !model.UTF8Validation.IsValidLabelName(dst) {
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
+	if ev.labelNameLengthLimit > 0 && uint(len(dst)) > ev.labelNameLengthLimit {
+		panic(fmt.Errorf("label name length limit exceeded: %d > %d", len(dst), ev.labelNameLengthLimit))
+	}
 
 	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
@@ -2455,6 +2464,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 			srcVals[i] = el.Metric.Get(src)
 		}
 		strval := strings.Join(srcVals, sep)
+		if ev.labelValueLengthLimit > 0 && uint(len(strval)) > ev.labelValueLengthLimit {
+			panic(fmt.Errorf("label value length limit exceeded: %d > %d", len(strval), ev.labelValueLengthLimit))
+		}
 		lb.Reset(el.Metric)
 		lb.Set(dst, strval)
 		matrix[i].Metric = lb.Labels()

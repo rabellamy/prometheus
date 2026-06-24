@@ -167,14 +167,18 @@ type PromParser struct {
 	offsets []int
 
 	enableTypeAndUnitLabels bool
+	nameLimit               uint
+	valueLimit              uint
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool) Parser {
+func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool, nameLimit, valueLimit uint) Parser {
 	return &PromParser{
 		l:                       &promlexer{b: append(b, '\n')},
 		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		nameLimit:               nameLimit,
+		valueLimit:              valueLimit,
 	}
 }
 
@@ -439,6 +443,9 @@ func (p *PromParser) parseLVals() error {
 			curTStart++
 			curTI--
 		}
+		if p.nameLimit > 0 && uint(curTI-curTStart) > p.nameLimit {
+			return fmt.Errorf("label name length limit exceeded: %d > %d", curTI-curTStart, p.nameLimit)
+		}
 		p.offsets = append(p.offsets, curTStart, curTI)
 		if t != tEqual {
 			return p.parseError("expected equal", t)
@@ -448,6 +455,11 @@ func (p *PromParser) parseLVals() error {
 		}
 		if !utf8.Valid(p.l.buf()) {
 			return fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
+		}
+
+		valLen := (p.l.i - 1) - (p.l.start + 1)
+		if p.valueLimit > 0 && uint(valLen) > p.valueLimit {
+			return fmt.Errorf("label value length limit exceeded: %d > %d", valLen, p.valueLimit)
 		}
 
 		// The promlexer ensures the value string is quoted. Strip first

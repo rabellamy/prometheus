@@ -2945,6 +2945,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 			ScrapeProtocols:            opts.ScrapeProtocols,
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
+			LabelNameLengthLimit:       1048576,
+			LabelValueLengthLimit:      1048576,
 
 			MetricsPath:       "/metrics",
 			Scheme:            "http",
@@ -3050,6 +3052,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 					ExtraScrapeMetrics:             boolPtr(false),
+					LabelNameLengthLimit:           1048576,
+					LabelValueLengthLimit:          1048576,
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
@@ -3089,6 +3093,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 					ExtraScrapeMetrics:             boolPtr(false),
+					LabelNameLengthLimit:           1048576,
+					LabelValueLengthLimit:          1048576,
 
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{
